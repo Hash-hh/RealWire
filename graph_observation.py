@@ -71,8 +71,8 @@ class GraphObservationExtractor(nn.Module):
         degree_embedding = global_mean_pool(degree_embedding, batch)
         
         # Calculate graph-level statistics
-        from torch_geometric.utils import density, segregation, homophily
-        
+        # from torch_geometric.utils import to_dense_adj, homophily
+
         # Graph size (normalized by dataset max size for stability)
         max_nodes = 100  # Adjust based on your dataset
         graph_size = torch.tensor([x.size(0) / max_nodes], device=x.device)

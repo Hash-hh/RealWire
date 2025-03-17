@@ -2,11 +2,12 @@
 Enhanced environment that supports multi-step edge modifications
 with adaptive rewards and episode termination.
 """
-import gym
+import gymnasium as gym
 import numpy as np
 import torch
 import torch.nn.functional as F
-from stable_baselines3.common.vec_env import DummyVecEnv
+from gymnasium.spaces import Discrete
+
 
 class MultiStepGraphEnv(gym.Env):
     """
@@ -38,7 +39,7 @@ class MultiStepGraphEnv(gym.Env):
         
         # History tracking
         self.history = []
-        
+
         # Set up observation space: output size of the obs_extractor
         obs_size = self.obs_extractor.final_projection.out_features
         self.observation_space = gym.spaces.Box(
@@ -48,8 +49,8 @@ class MultiStepGraphEnv(gym.Env):
         # Action space: action_type (add, remove, rewire) + which candidate edge
         # For this example, we'll use discrete actions for simplicity
         self.max_candidates = config.max_candidates
-        self.action_space = gym.spaces.Discrete(self.max_candidates)
-        
+        self.action_space = Discrete(self.max_candidates)
+
         # Prepare for first reset
         self._setup_new_episode()
         
@@ -77,7 +78,7 @@ class MultiStepGraphEnv(gym.Env):
             initial_pred = self.gnn_model(
                 self.current_data.x, self.current_data.edge_index, self.current_data.batch
             )
-            self.initial_mse = F.mse_loss(initial_pred, self.current_data.y).item()
+            self.initial_mse = F.mse_loss(initial_pred, self.current_data.y.unsqueeze(dim=1)).item()
             self.best_mse = self.initial_mse
         
         self.history = []
@@ -115,23 +116,38 @@ class MultiStepGraphEnv(gym.Env):
         total_reward = base_reward + improvement_bonus + step_penalty
         
         return total_reward
-        
-    def reset(self):
+
+    def reset(self, seed=None, options=None):
         """
         Reset the environment at the end of an episode and return the initial observation.
+
+        Args:
+            seed: Optional seed for randomness
+            options: Additional options for reset behavior
+
+        Returns:
+            observation: Initial observation
+            info: Additional information
         """
+        # Set the seed if provided
+        if seed is not None:
+            np.random.seed(seed)
+            torch.manual_seed(seed)
+
         self._setup_new_episode()
-        
+
         # Extract observation
         with torch.no_grad():
             obs = self.obs_extractor(
-                self.current_data.x, 
+                self.current_data.x,
                 self.current_data.edge_index,
                 self.current_data.batch
             ).cpu().numpy().astype(np.float32)
-            
-        return obs
-    
+
+        # In newer Gymnasium versions, reset should return (obs, info)
+        info = {}
+        return obs, info
+
     def step(self, action):
         """
         Take a step in the environment by applying the chosen edge operation.
@@ -168,7 +184,7 @@ class MultiStepGraphEnv(gym.Env):
                     self.current_data.edge_index,
                     self.current_data.batch
                 )
-                loss = F.mse_loss(pred, self.current_data.y)
+                loss = F.mse_loss(pred, self.current_data.y.unsqueeze(dim=1))
                 loss.backward()
                 optimizer.step()
         
@@ -179,7 +195,7 @@ class MultiStepGraphEnv(gym.Env):
                 self.current_data.edge_index,
                 self.current_data.batch
             )
-            current_mse = F.mse_loss(pred, self.current_data.y).item()
+            current_mse = F.mse_loss(pred, self.current_data.y.unsqueeze(dim=1)).item()
         
         # Calculate reward
         reward = self._compute_reward(current_mse)
@@ -209,9 +225,9 @@ class MultiStepGraphEnv(gym.Env):
             "operation": operation.name,
             "step": self.step_count
         }
-        
-        return obs, reward, done, info
-    
+
+        return obs, reward, done, False, info
+
     def _build_observation(self):
         """
         Build the observation vector using the observation extractor.

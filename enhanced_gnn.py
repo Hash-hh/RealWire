@@ -11,7 +11,7 @@ from torch_geometric.nn import (
 )
 
 class EnhancedGNN(nn.Module):
-    def __init__(self, in_channels, hidden_channels=64, num_layers=3, 
+    def __init__(self, in_channels, hidden_channels=64, num_layers=4,
                  dropout=0.2, layer_type="pna", readout="combined",
                  use_batch_norm=True, task="regression", out_channels=1):
         """
@@ -84,19 +84,25 @@ class EnhancedGNN(nn.Module):
         
         # Jumping Knowledge with attention
         self.jk = JumpingKnowledge(mode='cat', channels=hidden_channels, num_layers=num_layers)
-        
-        # Output layers
-        readout_dim = hidden_channels * num_layers if self.readout == "combined" else hidden_channels
-        
-        # Add additional layers for task-specific prediction
+
+        # Calculate the actual input dimension for the output layer
+        if self.readout == "combined":
+            # For combined readout (mean, sum, max), the dim is multiplied by 3
+            jk_output_dim = hidden_channels * (num_layers+1)  # we are also including the original input layer
+            readout_dim = jk_output_dim * 3
+        else:
+            # For single readout, no multiplication by 3
+            jk_output_dim = hidden_channels * num_layers
+            readout_dim = jk_output_dim
+
+        # Update output layers with correct input dimension
         self.output_layers = nn.Sequential(
-            nn.Linear(readout_dim * 3 if self.readout == "combined" else readout_dim, 
-                      hidden_channels),
+            nn.Linear(readout_dim, hidden_channels),
             nn.ReLU(),
             nn.Dropout(dropout),
             nn.Linear(hidden_channels, out_channels)
         )
-    
+
     def forward(self, x, edge_index, batch=None):
         """
         Forward pass

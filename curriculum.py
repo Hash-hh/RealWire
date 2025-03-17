@@ -3,6 +3,9 @@ Curriculum learning to gradually increase difficulty of graph rewiring.
 """
 import numpy as np
 import torch
+import gym
+from stable_baselines3.common.callbacks import BaseCallback
+
 
 class CurriculumScheduler:
     def __init__(self, env, config, difficulty_metrics=['graph_size', 'edge_density']):
@@ -131,19 +134,21 @@ class CurriculumScheduler:
                                  if len(self.performance_history) >= self.window_size else 0
         }
 
-class CurriculumCallback:
+class CurriculumCallback(BaseCallback):
     """
     Callback for Stable-Baselines3 to handle curriculum learning
     """
-    def __init__(self, curriculum_scheduler, check_freq=1000):
+    def __init__(self, curriculum_scheduler, check_freq=1000, verbose=0):
+        super().__init__(verbose)
         self.curriculum_scheduler = curriculum_scheduler
         self.check_freq = check_freq
-        self.n_calls = 0
 
-    def __call__(self, locals_dict, globals_dict):
-        """Called in the RL training loop"""
-        self.n_calls += 1
+    def _init_callback(self):
+        # Called when the callback is initialized
+        pass
 
+    def _on_step(self):
+        """Called at each step of the training"""
         # Check if we should update curriculum
         if self.n_calls % self.check_freq == 0:
             if self.curriculum_scheduler.update_curriculum():

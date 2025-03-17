@@ -1,0 +1,121 @@
+# RL-GNN Graph Rewiring Configuration
+# Created: 2025-03-17
+# Author: GitHub Copilot
+# For user: Hash-hh
+
+# ===========================================
+# GENERAL SETTINGS
+# ===========================================
+general:
+  seed: 42                   # Random seed for reproducibility. Fixed seed ensures experiments can be reproduced.
+  log_dir: "logs/rewiring"   # Directory where all logs, models, and evaluation results will be saved
+  use_curriculum: true       # Whether to use curriculum learning (gradually increasing task difficulty)
+  force_cpu: false           # Force using CPU even if GPU is available (useful for debugging)
+
+# ===========================================
+# DATASET CONFIGURATION
+# ===========================================
+dataset:
+  name: "ZINC"               # Dataset name: options include "ZINC", "QM9", "TUDataset", "MoleculeNet"
+  root_dir: "data/zinc"      # Directory where the dataset is stored or will be downloaded to
+  subset: true               # For ZINC: use smaller subset for faster experiments (only ~12K graphs instead of ~250K)
+  split: "train"             # Dataset split to use: "train", "val", or "test"
+  max_samples: 200          # Limit dataset size for faster iteration; set to -1 to use full dataset
+
+# ===========================================
+# GNN MODEL ARCHITECTURE
+# ===========================================
+gnn_model:
+  hidden_channels: 128       # Number of hidden channels in GNN layers (larger = more expressive but slower)
+  num_layers: 3              # Number of message passing layers (deeper = larger receptive field but harder to train)
+  dropout: 0.1               # Dropout rate for regularization (helps prevent overfitting)
+  layer_type: "graph"          # GNN layer type: "gcn", "gat", "gin", "graph", or "pna" (PNA typically performs best)
+  readout: "combined"        # Graph pooling method: "mean", "sum", "max", or "combined" (combines all three)
+  use_batch_norm: true       # Whether to use batch normalization (improves training stability)
+  task: "regression"         # Task type: "regression" or "classification"
+  out_channels: 1            # Number of output channels (1 for regression, num_classes for classification)
+  pretrain_epochs: 15        # Number of epochs to pretrain GNN before RL (helps stabilize initial predictions)
+  batch_size: 64             # Batch size for GNN training (larger = faster but requires more memory)
+  learning_rate: 0.001       # Learning rate for GNN optimizer during pretraining and fine-tuning
+  target_idx: 0              # For datasets with multiple targets (e.g., QM9), which target to predict
+
+# ===========================================
+# OBSERVATION SPACE CONFIGURATION
+# ===========================================
+observation:
+  hidden_channels: 128       # Hidden channels for observation extractor (should match GNN hidden_channels)
+  embedding_size: 64         # Size of final graph embedding used as RL observation (smaller = faster RL)
+
+# ===========================================
+# EDGE OPERATION CONFIGURATION
+# ===========================================
+edge_operator:
+  # Strategy for generating candidate edges to modify
+  # "random": Random edge candidates (fastest but least informed)
+  # "degree_based": Favor connecting high/low degree nodes (good for controlling degree distribution)
+  # "feature_similarity": Connect nodes with similar features (good for homophilic graphs)
+  # "structural": Based on graph topology like triangles (good for community detection)
+  strategy: "feature_similarity"
+
+# ===========================================
+# ENVIRONMENT CONFIGURATION
+# ===========================================
+environment:
+  max_steps_per_episode: 5   # Maximum number of edge modifications per episode (more = finer control but harder to learn)
+  max_candidates: 50         # Maximum number of candidate edge operations per step (larger = more options but larger action space)
+  fine_tune_steps: 3         # Number of GNN fine-tuning steps after each graph modification
+  lr_gnn: 0.0005             # Learning rate for GNN fine-tuning (typically lower than pretraining)
+  freeze_gnn: false          # Whether to freeze GNN parameters during RL (false allows adaptation to modifications)
+  reward_shaping: true       # Whether to use shaped rewards (recommended) or simple rewards
+
+# ===========================================
+# CURRICULUM LEARNING CONFIGURATION
+# ===========================================
+curriculum:
+  curriculum_stages: 5       # Number of curriculum stages (more = smoother difficulty progression)
+  curriculum_success_threshold: 0.25  # Threshold for advancing to next curriculum stage (relative improvement needed)
+  curriculum_window_size: 25  # Window size for evaluating success criterion (number of episodes to average over)
+  check_freq: 5000           # How often to check for curriculum advancement (in timesteps)
+  difficulty_metrics:        # Which metrics to use for measuring graph difficulty
+    - "graph_size"           # Larger graphs are considered harder
+    - "edge_density"         # Denser graphs are harder to rewire effectively
+    - "feature_dim"          # More complex node features can be harder to reason about
+  max_steps_per_episode_base: 2     # Initial number of steps per episode (will increase with curriculum)
+  curriculum_step_increase: 1        # How many steps to add per curriculum stage
+  max_candidates_base: 20            # Initial number of candidate edges (will increase with curriculum)
+  curriculum_candidates_increase: 10  # How many candidates to add per curriculum stage
+  max_candidates_max: 100            # Maximum number of candidates regardless of curriculum stage
+
+# ===========================================
+# PPO AGENT CONFIGURATION
+# ===========================================
+ppo:
+  policy_type: "MlpPolicy"   # Policy network type (MlpPolicy for vector observations)
+  learning_rate: 0.0003      # Learning rate for PPO optimizer (typically 3e-4 works well)
+  n_steps: 2048              # Number of steps to run for each environment per update
+  batch_size: 128            # Minibatch size for PPO updates (must be <= n_steps)
+  n_epochs: 10               # Number of epochs to optimize on the same trajectories
+  gamma: 0.99                # Discount factor for future rewards (higher = more long-term focus)
+  gae_lambda: 0.95           # GAE lambda parameter for advantage estimation
+  clip_range: 0.2            # Clipping parameter for PPO loss (prevents too large policy updates)
+  clip_range_vf: null        # Optional separate clipping for value function (null = use same as policy)
+  normalize_advantage: true  # Whether to normalize advantages (helps training stability)
+  ent_coef: 0.01             # Entropy coefficient for exploration encouragement (higher = more exploration)
+  vf_coef: 0.5               # Value function coefficient in loss (balances policy and value losses)
+  max_grad_norm: 0.5         # Gradient clipping to prevent exploding gradients
+  use_sde: false             # Whether to use state-dependent exploration (advanced technique)
+  sde_sample_freq: -1        # How often to sample exploration noise when using SDE
+  target_kl: 0.015           # Target KL divergence threshold for early stopping updates (prevents too large updates)
+  policy_network:            # Architecture of policy and value networks
+    - {"pi": [128, 128], "vf": [128, 128]}  # Two hidden layers with 128 units each
+
+# ===========================================
+# TRAINING PARAMETERS
+# ===========================================
+training:
+  total_timesteps: 1000000   # Total number of environment steps for training
+  num_envs: 8                # Number of parallel environments (more = faster training but more memory)
+  eval_freq: 20000           # How often to evaluate agent performance (in timesteps)
+  n_eval_episodes: 20        # Number of episodes for evaluation
+  checkpoint_freq: 50000     # How often to save model checkpoints (in timesteps)
+  use_eval_callback: true    # Whether to use evaluation callback to track and save best models
