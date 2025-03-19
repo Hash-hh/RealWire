@@ -242,15 +242,19 @@ def evaluate_model(env, model, num_episodes=10):
     improvements = []
 
     for _ in range(num_episodes):
-        obs = env.reset()
+        obs, info = env.reset()
         episode_reward = 0
         done = False
+        terminated = False
+        truncated = False
 
         initial_mse = env.initial_mse
 
-        while not done:
+        while not (terminated or truncated):
             action, _ = model.predict(obs, deterministic=True)
-            obs, reward, done, info = env.step(action)
+            # Fix: unpack the 5 return values from step
+            obs, reward, terminated, truncated, info = env.step(action)
+            done = terminated or truncated
             episode_reward += reward
 
         # Record metrics
@@ -261,11 +265,11 @@ def evaluate_model(env, model, num_episodes=10):
         mses.append(final_mse)
         improvements.append(improvement)
 
-    # Calculate average metrics
+        # Calculate average metrics
     avg_reward = sum(rewards) / len(rewards)
     avg_mse = sum(mses) / len(mses)
     avg_improvement = sum(improvements) / len(improvements)
-    avg_relative_improvement = sum([i["relative_improvement"] for i in improvements]) / len(improvements)
+    avg_relative_improvement = sum([i["relative_improvement"] for i in info]) / len(improvements)
 
     return {
         "avg_reward": avg_reward,
@@ -276,7 +280,6 @@ def evaluate_model(env, model, num_episodes=10):
         "all_mses": mses,
         "all_improvements": improvements,
     }
-
 
 def main(config_path=None):
     """
